@@ -170,6 +170,7 @@
   .run-editor{background:var(--panel-2);border:1px solid var(--accent-dim);border-radius:10px;padding:12px;margin-bottom:16px;}
   .run-editor .re-head{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;margin-bottom:10px;}
   .re-close{margin-left:auto;background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:15px;}
+  .qb-group button:disabled{opacity:.35;cursor:default;}
   .slider-row{margin-bottom:10px;}
   .slider-row .sr-top{display:flex;justify-content:space-between;font-size:11.5px;color:var(--text-dim);margin-bottom:4px;}
   .slider-row .sr-top b{color:var(--accent);font-weight:700;}
@@ -319,6 +320,11 @@
     </div>
     <div class="qb-sep"></div>
     <div class="qb-group">
+      <button class="play-secondary" id="btnUndo" title="Retour : annuler la dernière action (Ctrl/Cmd+Z)" disabled>↶ Retour</button>
+      <button class="play-secondary" id="btnRedo" title="Rétablir (Ctrl/Cmd+Maj+Z)" disabled>↷</button>
+    </div>
+    <div class="qb-sep"></div>
+    <div class="qb-group">
       <button class="play-secondary" id="btnRestart" title="Revenir au départ de cette séquence (Origine)">⏮</button>
       <button class="play-main" id="btnPlayPause" title="Lecture / Pause de cette séquence (Espace)">▶ Lecture</button>
       <button class="play-secondary" id="btnEnd" title="Aller à la fin de cette séquence (Fin)">⏭</button>
@@ -423,6 +429,13 @@
           <div class="color-row"><input type="color" id="colGk" value="#f2c14e"><label>Gardiens</label></div>
           <button class="full-btn" id="btnResetColors">↺ Couleurs par défaut</button>
         </div>
+        <div class="block">
+          <h3>Taille des pions</h3>
+          <div class="slider-row">
+            <div class="sr-top"><span>Taille (le numéro s'ajuste tout seul)</span><b id="tokenSizeVal">100 %</b></div>
+            <input type="range" id="tokenSizeRange" min="0.6" max="1.8" step="0.05" value="1">
+          </div>
+        </div>
       </div>
 
       <div class="tabpanel" id="tabReglages" hidden>
@@ -433,6 +446,12 @@
             <button class="speed-btn active" data-s="normal">NORMAL · 2.5s</button>
             <button class="speed-btn" data-s="rapide">RAPIDE · 1.2s</button>
           </div>
+        </div>
+        <div class="block">
+          <h3>Déplacements avec le ballon</h3>
+          <label class="chain-toggle" style="display:flex;align-items:center;gap:8px;font-size:12.5px;cursor:pointer;">
+            <input type="checkbox" id="chkQuickCarry"> Conduite de balle par défaut (le ballon suit le joueur)
+          </label>
         </div>
         <div class="block">
           <h3>Couleur par défaut du prochain tracé</h3>
@@ -579,6 +598,7 @@
 <script>
 
 
+
 (function(){
   "use strict";
 
@@ -620,7 +640,9 @@
     activeTempsId:'temps1',
     livePos:null,
     playTempsIdx:0,
-    chainPlayback:false
+    chainPlayback:false,
+    tokenScale:1,
+    quickCarry:false
   };
   var DUR = {lent:3.5, normal:2.5, rapide:1.2};
   var uidCounter=1;
@@ -904,10 +926,12 @@
   }
   function railPosition(index){
     var c=currentCrop();
-    var perRow=Math.max(3, Math.floor((c.w-10)/4.5));
+    var step=Math.max(4.5, PR()*2.7);
+    var perRow=Math.max(3, Math.floor((c.w-10)/step));
     var col=index%perRow, row=Math.floor(index/perRow);
-    return {x:c.x+5+col*4.5, y:c.y+3+row*4.5};
+    return {x:c.x+5+col*step, y:c.y+3+row*step};
   }
+  function PR(){ return 1.7*state.tokenScale; }
   var pendingLabels=[];
   var suppressAnnotLabels=false;
   function renderTokens(){
@@ -922,24 +946,24 @@
         var lp=live.players[p.id]||{x:p.x,y:p.y};
         var parkedLive=isOutOfCrop(lp);
         if(parkedLive) lp=railPosition(railIndex++);
-        gTokens.appendChild(makeTokenEl(p.id,lp.x,lp.y,col.fill,col.stroke,1.7,false,false,parkedLive));
-        pendingLabels.push({x:lp.x,y:lp.y,text:String(p.num),size:1.7*1.15,nudge:1,color:contrastTextColor(col.fill)});
+        gTokens.appendChild(makeTokenEl(p.id,lp.x,lp.y,col.fill,col.stroke,PR(),false,false,parkedLive));
+        pendingLabels.push({x:lp.x,y:lp.y,text:String(p.num),size:PR()*1.15,nudge:PR()*0.6,color:contrastTextColor(col.fill)});
       } else {
         var basePos = state.mode==='position' ? {x:p.x,y:p.y} : basePosForTemps(p.id, state.activeTempsId);
         var parked=isOutOfCrop(basePos);
         if(parked) basePos=railPosition(railIndex++);
-        gTokens.appendChild(makeTokenEl(p.id,basePos.x,basePos.y,col.fill,col.stroke,1.7,false,false,parked));
-        pendingLabels.push({x:basePos.x,y:basePos.y,text:String(p.num),size:1.7*1.15,nudge:1,color:contrastTextColor(col.fill)});
+        gTokens.appendChild(makeTokenEl(p.id,basePos.x,basePos.y,col.fill,col.stroke,PR(),false,false,parked));
+        pendingLabels.push({x:basePos.x,y:basePos.y,text:String(p.num),size:PR()*1.15,nudge:PR()*0.6,color:contrastTextColor(col.fill)});
         var runs=runsForActorInTemps(p.id, state.activeTempsId);
         runs.forEach(function(r){
           var info=idxInfo[r.id];
           var num = info ? info.index : 1;
-          var gEl=makeTokenEl('ghost:'+r.id, r.to.x, r.to.y, col.fill, col.stroke, 1.7, false, true);
-          var badge=makeGhostBadge(1.7);
+          var gEl=makeTokenEl('ghost:'+r.id, r.to.x, r.to.y, col.fill, col.stroke, PR(), false, true);
+          var badge=makeGhostBadge(PR());
           gEl.appendChild(badge);
           gTokens.appendChild(gEl);
-          pendingLabels.push({x:r.to.x, y:r.to.y, text:String(p.num), size:1.7*1.15, nudge:1, dim:true, color:contrastTextColor(col.fill)});
-          var bx=1.7*0.76, by=-1.7*0.76, br=1.7*0.68;
+          pendingLabels.push({x:r.to.x, y:r.to.y, text:String(p.num), size:PR()*1.15, nudge:PR()*0.6, dim:true, color:contrastTextColor(col.fill)});
+          var bx=PR()*0.76, by=-PR()*0.76, br=PR()*0.68;
           pendingLabels.push({x:r.to.x+bx, y:r.to.y+by, text:String(num), size:br*1.35, nudge:br*0.36, badge:true});
         });
       }
@@ -1040,7 +1064,54 @@
   function runsForActorInTemps(id,tempsId){
     return state.runs.filter(function(r){ return r.actorId===id && r.tempsId===tempsId; }).sort(function(a,b){ return a.start-b.start; });
   }
+  function ballSegments(tempsId, excludeId){
+    return state.runs.filter(function(r){
+      return r.tempsId===tempsId && r.id!==excludeId && (r.actorId==='ball' || (r.kind==='move' && r.carry && r.carryOff));
+    }).sort(function(a,b){ return a.start-b.start; });
+  }
+  function segEnd(r){
+    return r.actorId==='ball' ? {x:r.to.x,y:r.to.y} : {x:r.to.x+r.carryOff.x, y:r.to.y+r.carryOff.y};
+  }
+  function segAt(r,t){
+    var lt=clamp((t-r.start)/r.duration,0,1);
+    var q=quadPoint(r.from,{x:r.cx,y:r.cy},r.to,lt);
+    return r.actorId==='ball' ? q : {x:q.x+r.carryOff.x, y:q.y+r.carryOff.y};
+  }
+  function ballAtTime(tempsId, t, carryIn, excludeId){
+    var segs=ballSegments(tempsId, excludeId);
+    if(segs.length===0) return carryIn;
+    if(t<=segs[0].start && segs[0].actorId==='ball') return {x:segs[0].from.x, y:segs[0].from.y};
+    var pos=carryIn;
+    for(var i=0;i<segs.length;i++){
+      var s=segs[i];
+      if(t<s.start) break;
+      if(t>=s.start+s.duration) pos=segEnd(s);
+      else return segAt(s,t);
+    }
+    return pos;
+  }
+  function maxBallEnd(tempsId){
+    var m=0;
+    ballSegments(tempsId).forEach(function(s){ m=Math.max(m, s.start+s.duration); });
+    return m;
+  }
+  function setupCarry(run){
+    var rest=chainedPositionUpTo('ball', tempsIndexOf(run.tempsId));
+    var bp=ballAtTime(run.tempsId, run.start, rest, run.id);
+    var d=Math.hypot(bp.x-run.from.x, bp.y-run.from.y);
+    if(d>0.8 && d<=PR()+2.5){ run.carryOff={x:bp.x-run.from.x, y:bp.y-run.from.y}; return; }
+    var dx=run.to.x-run.from.x, dy=run.to.y-run.from.y, len=Math.hypot(dx,dy)||1;
+    var dist=PR()+0.75+0.3;
+    run.carryOff={x:dx/len*dist, y:dy/len*dist};
+  }
   function chainedPositionUpTo(id, tempsIdxExclusive){
+    if(id==='ball'){
+      var pos={x:state.ball.x, y:state.ball.y};
+      for(var i=0;i<tempsIdxExclusive && i<state.temps.length;i++){
+        ballSegments(state.temps[i].id).forEach(function(s){ pos=segEnd(s); });
+      }
+      return pos;
+    }
     var runs=runsForActor(id).filter(function(r){ return tempsIndexOf(r.tempsId) < tempsIdxExclusive; });
     if(runs.length) return {x:runs[runs.length-1].to.x, y:runs[runs.length-1].to.y};
     var p=getPlayer(id);
@@ -1079,7 +1150,7 @@
   }
   function chronoRunLabel(run){
     if(run.kind==='pass') return run.receiverId ? ('Ballon → '+chronoActorLabel(run.receiverId)) : 'Ballon → point libre';
-    return chronoActorLabel(run.actorId);
+    return chronoActorLabel(run.actorId)+(run.carry ? ' + ballon' : '');
   }
   function chronoRunColor(run){
     if(run.kind==='pass') return 'var(--pass)';
@@ -1123,7 +1194,7 @@
     var run = {
       id: uid('r'), kind:kind, actorId:actorId, tempsId: state.activeTempsId,
       from:{x:from.x,y:from.y}, to:{x:to.x,y:to.y},
-      start: Math.max(0, maxEndForActorInTemps(chainId, state.activeTempsId)),
+      start: Math.max(0, chainId==='ball' ? maxBallEnd(state.activeTempsId) : maxEndForActorInTemps(chainId, state.activeTempsId)),
       duration: DUR[state.quickDuration],
       color:state.quickColor||null,
       strokeStyle: 'dotted',
@@ -1133,6 +1204,7 @@
     if(meta){ run.receiverId=meta.receiverId; run.fromPlayerId=meta.fromPlayerId||null; }
     var c=defaultControl(from,to);
     run.cx=c.x; run.cy=c.y;
+    if(kind==='move' && actorId!=='ball' && state.quickCarry){ run.carry=true; setupCarry(run); }
     state.runs.push(run);
     state.pickedRun=run.id;
     renderAll();
@@ -1197,6 +1269,14 @@
         ball.setAttribute('opacity', run.opacity!=null ? run.opacity : 1);
         ball.addEventListener('click', function(e){ e.stopPropagation(); pickRun(run.id); });
         wrap.appendChild(ball);
+      }
+
+      if(run.kind==='move' && run.carry && run.carryOff && run.actorId!=='ball'){
+        var cm=quadPoint(run.from,{x:run.cx,y:run.cy},run.to,0.5);
+        var cb=ballGlyphAt(cm.x+run.carryOff.x, cm.y+run.carryOff.y, 0.7);
+        cb.setAttribute('opacity', run.opacity!=null ? run.opacity : 1);
+        cb.setAttribute('pointer-events','none');
+        wrap.appendChild(cb);
       }
 
       var handle=ns('circle');
@@ -1635,7 +1715,7 @@
     var other = which==='from' ? run.to : run.from;
     var dx=other.x-pPos.x, dy=other.y-pPos.y, len=Math.hypot(dx,dy)||1;
     var ux=dx/len, uy=dy/len;
-    var gap=1.7+0.75+0.4; // rayon pion + rayon ballon + marge, pour éviter la superposition
+    var gap=PR()+0.75+0.4; // rayon pion + rayon ballon + marge, pour éviter la superposition
     var off=Math.min(gap, Math.max(0,(len-0.6)/2));
     var newPt={x:pPos.x+ux*off, y:pPos.y+uy*off};
     var oldPt={x:run[which].x, y:run[which].y};
@@ -1747,6 +1827,20 @@
         run.receiverId=val;
         if(val) attachPassEndpointToPlayer(run,'to',val);
       }));
+    }
+
+    if(run.kind==='move' && run.actorId!=='ball'){
+      var carryRow=document.createElement('label'); carryRow.className='chain-toggle';
+      carryRow.style.cssText='display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:12.5px;cursor:pointer;';
+      var carryChk=document.createElement('input'); carryChk.type='checkbox'; carryChk.checked=!!run.carry;
+      carryChk.addEventListener('change', function(){
+        run.carry=carryChk.checked;
+        if(run.carry) setupCarry(run); else delete run.carryOff;
+        renderAll();
+      });
+      carryRow.appendChild(carryChk);
+      carryRow.appendChild(document.createTextNode('Conduite de balle (le ballon suit le joueur)'));
+      box.appendChild(carryRow);
     }
 
     var maxOthers=0;
@@ -2332,7 +2426,7 @@
   }
   function drawGhostAt(x,y,color){
     var c=ns('circle');
-    c.setAttribute('cx',x); c.setAttribute('cy',y); c.setAttribute('r','1.7');
+    c.setAttribute('cx',x); c.setAttribute('cy',y); c.setAttribute('r',PR());
     c.setAttribute('fill',color); c.setAttribute('fill-opacity','0.4');
     c.setAttribute('stroke',color); c.setAttribute('stroke-opacity','0.8'); c.setAttribute('stroke-width','0.35');
     c.setAttribute('stroke-dasharray','0.5,0.4');
@@ -2444,7 +2538,7 @@
     var p2=chainedPositionUpTo(id2, idxExcl);
     var dx=p2.x-p1.x, dy=p2.y-p1.y, len=Math.hypot(dx,dy)||1;
     var ux=dx/len, uy=dy/len;
-    var gap=1.7+0.75+0.4; // rayon pion joueur + rayon ballon + marge, pour éviter la superposition
+    var gap=PR()+0.75+0.4; // rayon pion joueur + rayon ballon + marge, pour éviter la superposition
     var off=Math.min(gap, Math.max(0,(len-0.6)/2));
     var from={x:p1.x+ux*off, y:p1.y+uy*off};
     var to={x:p2.x-ux*off, y:p2.y-uy*off};
@@ -2585,13 +2679,8 @@
         live.players[p.id]=positionAtTime(runs, t, carryIn);
       }
     });
-    var brun=runsForActorInTemps('ball', tempsId);
-    if(brun.length===0){
-      live.ball = state.livePos ? (state.livePos.ball||{x:state.ball.x,y:state.ball.y}) : basePosForTemps('ball', tempsId);
-    } else {
-      var carryInB = state.livePos ? (state.livePos.ball||{x:state.ball.x,y:state.ball.y}) : basePosForTemps('ball', tempsId);
-      live.ball = positionAtTime(brun, t, carryInB);
-    }
+    var carryInB = state.livePos ? (state.livePos.ball||{x:state.ball.x,y:state.ball.y}) : basePosForTemps('ball', tempsId);
+    live.ball = ballAtTime(tempsId, t, carryInB);
     return live;
   }
   function stopPlayback(){
@@ -2711,6 +2800,14 @@
     syncUiFromState();
     render();
   }
+  function setTokenScale(v){
+    state.tokenScale=v;
+    document.getElementById('tokenSizeRange').value=v;
+    document.getElementById('tokenSizeVal').textContent=Math.round(v*100)+' %';
+  }
+  document.getElementById('tokenSizeRange').addEventListener('input', function(e){
+    setTokenScale(parseFloat(e.target.value)); renderAll();
+  });
   function syncUiFromState(){
     document.querySelectorAll('#fieldSeg button').forEach(function(b){ b.classList.toggle('active', b.getAttribute('data-field')===state.fieldView); });
     document.querySelectorAll('#orientSeg button').forEach(function(b){ b.classList.toggle('active', b.getAttribute('data-orient')===state.orientation); });
@@ -2730,7 +2827,7 @@
         teamCount:state.teamCount, oppCount:state.oppCount,
         players:state.players, ball:state.ball, runs:state.runs,
         shapes:state.shapes, links:state.links,
-        temps:state.temps, activeTempsId:state.activeTempsId,
+        temps:state.temps, activeTempsId:state.activeTempsId, tokenScale:state.tokenScale,
         teamColor:document.getElementById('colTeam').value,
         oppColor:document.getElementById('colOpp').value,
         gkColor:document.getElementById('colGk').value
@@ -2757,6 +2854,7 @@
       state.activeTempsId = data.activeTempsId && state.temps.some(function(t){return t.id===data.activeTempsId;}) ? data.activeTempsId : state.temps[0].id;
       state.pickedRun=null; state.selection=null; state.playTime=0; state.livePos=null; state.playTempsIdx=0;
       state.selectedShape=null; state.selectedLink=null; state.linkDraft=[];
+      setTokenScale(data.tokenScale||1);
       var tC=data.teamColor||'#3aa0ff', oC=data.oppColor||'#ef5548', gC=data.gkColor||'#f2c14e';
       document.getElementById('colTeam').value=tC; document.getElementById('colOpp').value=oC; document.getElementById('colGk').value=gC;
       setTeamColorVar('--team', tC); setTeamColorVar('--opp', oC); setTeamColorVar('--gk', gC);
@@ -3051,6 +3149,7 @@
   });
 
   document.getElementById('btnPlayPause').addEventListener('click', togglePlay);
+  document.getElementById('chkQuickCarry').addEventListener('change', function(e){ state.quickCarry=e.target.checked; });
   document.getElementById('chkChainPlayback').addEventListener('change', function(e){ state.chainPlayback=e.target.checked; });
   document.getElementById('btnRestart').addEventListener('click', goToStart);
   document.getElementById('btnEnd').addEventListener('click', goToEnd);
@@ -3618,6 +3717,84 @@
   window.addEventListener('online', updateOnlineStatus);
   window.addEventListener('offline', updateOnlineStatus);
 
+
+  // ---------------- Retour / Rétablir ----------------
+  var undoStack=[], redoStack=[], lastSnap=null, restoringSnap=false;
+  function snapState(){
+    return JSON.stringify({
+      tc:state.teamCount, oc:state.oppCount, pl:state.players, ball:state.ball,
+      runs:state.runs, shapes:state.shapes, links:state.links, temps:state.temps, ts:state.tokenScale,
+      col:[document.getElementById('colTeam').value, document.getElementById('colOpp').value, document.getElementById('colGk').value]
+    });
+  }
+  function updateUndoButtons(){
+    document.getElementById('btnUndo').disabled = undoStack.length===0;
+    document.getElementById('btnRedo').disabled = redoStack.length===0;
+  }
+  function checkpoint(){
+    if(restoringSnap) return;
+    var cur=snapState();
+    if(lastSnap===null){ lastSnap=cur; return; }
+    if(cur!==lastSnap){
+      undoStack.push(lastSnap);
+      if(undoStack.length>80) undoStack.shift();
+      redoStack=[];
+      lastSnap=cur;
+      updateUndoButtons();
+    }
+  }
+  function restoreSnap(str){
+    var d=JSON.parse(str);
+    restoringSnap=true;
+    stopPlayback();
+    state.livePos=null; state.playTime=0;
+    state.teamCount=d.tc; state.oppCount=d.oc;
+    document.getElementById('teamCountVal').textContent=d.tc;
+    document.getElementById('oppCountVal').textContent=d.oc;
+    state.players=d.pl; state.ball=d.ball; state.runs=d.runs; state.shapes=d.shapes; state.links=d.links; state.temps=d.temps;
+    if(!state.temps.some(function(t){return t.id===state.activeTempsId;})) state.activeTempsId=state.temps[0].id;
+    state.playTempsIdx=tempsIndexOf(state.activeTempsId);
+    state.pickedRun=null; state.selection=null; state.selectedShape=null; state.selectedLink=null;
+    state.linkDraft=[]; state.passDraft=[]; state.arrowDraft=null; gGuides.innerHTML='';
+    setTokenScale(d.ts||1);
+    document.getElementById('colTeam').value=d.col[0]; document.getElementById('colOpp').value=d.col[1]; document.getElementById('colGk').value=d.col[2];
+    setTeamColorVar('--team', d.col[0]); setTeamColorVar('--opp', d.col[1]); setTeamColorVar('--gk', d.col[2]);
+    syncUiFromState();
+    render();
+    lastSnap=snapState();
+    restoringSnap=false;
+    updateUndoButtons();
+  }
+  function undoAction(){
+    checkpoint();
+    if(!undoStack.length) return;
+    var prev=undoStack.pop();
+    redoStack.push(snapState());
+    restoreSnap(prev);
+    document.getElementById('statusText').textContent='Action annulée.';
+  }
+  function redoAction(){
+    if(!redoStack.length) return;
+    var next=redoStack.pop();
+    undoStack.push(snapState());
+    restoreSnap(next);
+    document.getElementById('statusText').textContent='Action rétablie.';
+  }
+  document.getElementById('btnUndo').addEventListener('click', undoAction);
+  document.getElementById('btnRedo').addEventListener('click', redoAction);
+  ['pointerup','click','change','keyup','dblclick'].forEach(function(ev){
+    document.addEventListener(ev, function(){ setTimeout(checkpoint,0); }, true);
+  });
+  document.addEventListener('keydown', function(e){
+    if(!((e.ctrlKey||e.metaKey) && !e.altKey)) return;
+    var k=e.key.toLowerCase();
+    if(k!=='z' && k!=='y') return;
+    var el=document.activeElement, tag=(el && el.tagName || '').toLowerCase(), type=(el && el.type || '').toLowerCase();
+    if(tag==='textarea' || (tag==='input' && ['text','number','password','search','email','url',''].indexOf(type)!==-1)) return;
+    e.preventDefault();
+    if(k==='y' || e.shiftKey) redoAction(); else undoAction();
+  });
+
   // ---------------- Init ----------------
   drawBackground();
   drawMarkings();
@@ -3626,6 +3803,7 @@
   renderTrashList();
   updateOnlineStatus();
   renderLockSettings();
+  checkpoint();
   showLock();
 })();
 </script>
